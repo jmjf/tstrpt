@@ -1,0 +1,31 @@
+{
+	"compilerOptions": {
+		"target": "ES2022",
+		"lib": ["ES2023"],
+		"module": "NodeNext",
+		"moduleResolution": "NodeNext",
+
+		"rootDir": "./src" /* Specify the root folder within your source files. */,
+		"typeRoots": ["./node_modules/@types", "./src/@types"],
+		"types": ["node"],
+		"sourceMap": true,
+		"outDir": "./dist",
+
+		"resolveJsonModule": true,
+		"allowJs": true,
+
+		"esModuleInterop": true,
+		"forceConsistentCasingInFileNames": true,
+		"strict": true,
+		"noImplicitAny": true,
+		"strictNullChecks": true,
+		"strictBindCallApply": false,
+		"noImplicitReturns": true,
+		"noFallthroughCasesInSwitch": true,
+		"allowUnreachableCode": false,
+		"skipLibCheck": true,
+	},
+	"ts-node": {
+		"esm": true
+	}
+}
