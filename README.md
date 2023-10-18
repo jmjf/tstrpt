@@ -1,2 +1,3 @@
 # tstrpt
-Experiments in test reporing for the Node native test runner
+
+Experiments in test reporting for the Node native test runner
