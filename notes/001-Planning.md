@@ -36,7 +36,7 @@ Basic plan
 - Get smart about rerendering (identify output that should not be rerendered and position to avoid rerender)
 - List all failures at end
 
-Jest output
+Jest output (for reference)
 ```
 
 On start lists
@@ -84,3 +84,122 @@ Fail output (single file showing details)
 List of tests same as single file pass except failing tests have x instead of check
 Failing test results at end as individual test fail above
 ```
+
+## Data
+
+So, let's say we have something like
+
+```typescript
+{
+  files: [
+    {
+      filePath: string,
+      fileName: string,
+      status: 'runs' | 'started' | 'pass' | 'fail',
+      runTimeMs: number,
+      suites: [
+        {
+          suiteName: string,
+          status: 'runs' | 'started' | 'pass' | 'fail',
+          runTimeMs: number,
+          tests: [
+            {
+              testName: string,
+              status: 'runs' | 'started' | 'pass' | 'fail',
+              runTimeMs: number,
+              matcherMessage: string,
+              stackLine: string,      // the first line of the stack trace,
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+But that doesn't address deeper nesting.
+
+Let's look at it this way (filtering some low-value attributes)
+
+- Enqueue
+  - nesting
+  - name (of file for file-level, of wrapper for others)
+  - file (for anything that isn't a file-level)
+  - line and column (not TS-friendly)
+- Dequeue -> same as enqueue
+- Start
+  - nesting
+  - name (of suite/test/subtest)
+  - file
+  - line and column
+- Pass
+  - name
+  - nesting
+  - test number (in the suite or file)
+  - durationMs
+  - file
+  - line and column
+- Fail same as Pass plus
+  - error
+    - failure type (varies by assertion library)
+    - code (varies by assertion library)
+    - cause
+      - matcher message
+- Fail for wrappers as Pass plus
+  - type (suite)
+  - error
+    - failure type
+    - cause
+    - code
+- Diagnostic
+  - nesting
+  - message (usually type and count except total run time)
+
+If we assume files run in parallel, for a given file, start start means a suite and test (or subsuite) within the suite.
+
+If suites within a file run concurrently, the stream may get muddy. I don't see anything in the pass or fail messages that relate a message to a specific suite. I may be able to use line and column to sequence or relate to enqueues to establish groups. For now, I'm not going to worry about this issue.
+
+- Everything has a nesting.
+- Everything except a diagnostic has a name, file, line, and column.
+- Pass and fail both have test number and duration ms.
+- Fail has an error.
+
+Let's also assume that a suite doesn't have any assertions, is only a wrapper
+
+```typescript
+{
+  files: [ {            // get from enqueue with no file (name = file)
+    file: string,
+    filePath: string,   // split to make formatting simpler ???
+    fileName: string, 
+    status: runs | start | pass | fail 
+  } ],
+  suites: [ {
+     fileIdx: number,   // files[fileIdx].file = file from suite start
+     parentSuiteIdx: number | null, 
+     nesting: number,
+     name: string,
+     line: number,
+     column: number,
+     durationMs: number,
+     status: runs | start | pass | fail 
+  } ],
+  tests: [ {            // try to identify tests by pass/fail and ignore start b/c names may not be unique
+    suiteIdx: number,
+    nesting: number,    // helps set ident
+    testNumber: number, 
+    durationMs: number,
+    passFlag: boolean,
+    failureType: string | null,
+    code: string | null,
+    causeMessage: string | null,
+  } ]
+}
+```
+
+Because of how nesting behaves, I may need a stack of starts. Need to think about the stream a bit.
+
+Build more complete test data (test tests) -- multi-file, multi-suite, see what happens when suites pass, expect and assert, etc.
+
+
