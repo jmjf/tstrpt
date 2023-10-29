@@ -13,7 +13,8 @@
     "test:rpt1": "node --test --loader ts-node/esm --enable-source-maps --test-reporter ./src/rpt1.mjs ./test/*.ts",
     "test:rpt2": "node --test --loader ts-node/esm --enable-source-maps --test-reporter ./src/rpt2.mjs ./test/*.ts",
     "test:rpt3": "node --test --loader ts-node/esm --enable-source-maps --test-reporter ./src/rpt3.mjs ./test/*.ts",
-    "test:rpt4": "node --test --loader ts-node/esm --enable-source-maps --test-reporter ./src/rpt4.mjs ./test/*.ts"
+    "test:rpt4": "node --test --loader ts-node/esm --enable-source-maps --test-reporter ./src/rpt4.mjs ./test/*.ts",
+    "test:rpt5": "node --test --import ./load-ts-node.mjs --enable-source-maps --test-reporter ./src/rpt5.mjs ./test/*.ts"
   },
   "keywords": [],
   "author": "",
