@@ -31,19 +31,17 @@ export default async function* rpt5(source) {
     }
 
     function findParent(fileIdx, data) {
-
-        // get the index of the test that is in the same file, nested one level up, 
-        // and that starts before the test in question and has max testLine
-
-        // This code is wrong. The comment above is correct, but the code isn't doing it.
-
-        const sorted = tests.sort((a, b) => a.testLine - b.testLine);
-        const idx = sorted.findIndex(t => (
-                (t.fileIdx === fileIdx) &&
-                (t.nesting === data.nesting - 1) &&
-                (t.testLine > data.line)
-            ));
-        console.log('findParent', idx, sorted);
+        console.log('findParent start', fileIdx, data);
+        const filtered = tests.filter(t => ((t.fileIdx === fileIdx) &&
+            (t.nesting === data.nesting - 1) &&
+            (t.testLine < data.line)
+        ));
+        return filtered.reduce((prv, cur) => {
+            if (prv === -1) return cur.idx;
+            return (cur.testLine > tests[prv].testLine ? cur.idx : prv);
+        }, -1);
+        // console.log('findParent', idx, data.line, data.name, tests[idx].testLine, tests[idx].testName);
+        
     }
     
     for await (const event of source) {
@@ -51,6 +49,7 @@ export default async function* rpt5(source) {
             case 'test:enqueue':
                 if ((event.data.nesting === 0) && (event.data.file === undefined)) {
                     testFiles.push({
+                        idx: testFiles.length || 0,
                         file: event.data.name,                        
                         fileName: path.basename(event.data.name),
                         filePath: path.dirname(event.data.name),
@@ -62,13 +61,13 @@ export default async function* rpt5(source) {
                     yield `RUNS ${event.data.name}\n`;
                 } else {
                     const fileIdx = testFiles.findIndex(f => f.file === fileURLToPath(event.data.file))
-                    const parentIdx = (event.data.nesting > 0) ? findParent(fileIdx, event.data) : -1;
                     const test = {
+                        idx: tests.length || 0,
                         testName: event.data.name,
                         testLine: event.data.line,
                         nesting: event.data.nesting,
                         fileIdx,
-                        parentIdx,
+                        parentIdx: (event.data.nesting > 0) ? findParent(fileIdx, event.data) : -1,
                         isStarted: false,
                         isComplete: false,
                         passed: 0,
