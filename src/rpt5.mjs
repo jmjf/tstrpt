@@ -1,10 +1,9 @@
 import path from 'node:path';
-import test from 'node:test';
 import { fileURLToPath } from 'node:url';
 
 function getTestSummary(testFiles, tests) {
     let summary = '';
-    testFiles.forEach(f => summary += `RAN ${f.file}\n`);
+    testFiles.forEach(f => summary += `RAN ${f.file} suites: ${f.suiteCount}; tests: ${f.testCount}; pass: ${f.passCount}; fail: ${f.failCount}\n`);
 
     // sort tests by fileIdx and testLine
     tests.sort((a, b) => a.fileIdx === b.fileIdx ? a.testLine - b.testLine : a.fileIdx - b.fileIdx);
@@ -17,9 +16,8 @@ function getTestSummary(testFiles, tests) {
 }
 
 export default async function* rpt5(source) {
-   const testFiles = [];
-   const tests = [];
-   let idx = -1;
+    const testFiles = [];
+    const tests = [];
 
     function findTestIdxForData(tests, data) {
         const fileIdx = testFiles.findIndex(f => f.file === fileURLToPath(data.file));
@@ -31,7 +29,7 @@ export default async function* rpt5(source) {
     }
 
     function findParent(fileIdx, data) {
-        console.log('findParent start', fileIdx, data);
+        // console.log('findParent start', fileIdx, data);
         const filtered = tests.filter(t => ((t.fileIdx === fileIdx) &&
             (t.nesting === data.nesting - 1) &&
             (t.testLine < data.line)
@@ -40,11 +38,20 @@ export default async function* rpt5(source) {
             if (prv === -1) return cur.idx;
             return (cur.testLine > tests[prv].testLine ? cur.idx : prv);
         }, -1);
-        // console.log('findParent', idx, data.line, data.name, tests[idx].testLine, tests[idx].testName);
-        
+        // console.log('findParent', idx, data.line, data.name, tests[idx].testLine, tests[idx].testName);     
+    }
+
+    function incrementParentChain(idx, attrName) {
+        while (tests[idx].parentIdx >= 0) {
+            idx = tests[idx].parentIdx;
+            tests[idx][attrName]++;
+        }
     }
     
     for await (const event of source) {
+        let idx = -1;
+        let msg = '';
+
         switch (event.type) {
             case 'test:enqueue':
                 if ((event.data.nesting === 0) && (event.data.file === undefined)) {
@@ -53,15 +60,18 @@ export default async function* rpt5(source) {
                         file: event.data.name,                        
                         fileName: path.basename(event.data.name),
                         filePath: path.dirname(event.data.name),
+                        isDequeued: false,
                         isStarted: false,
                         isComplete: false,
-                        passed: 0,
-                        failed: 0
+                        testCount: 0,
+                        suiteCount: 0,
+                        passCount: 0,
+                        failCount: 0
                     });
-                    yield `RUNS ${event.data.name}\n`;
+                    msg = `RUNS ${event.data.name}\n`;
                 } else {
                     const fileIdx = testFiles.findIndex(f => f.file === fileURLToPath(event.data.file))
-                    const test = {
+                    tests.push({
                         idx: tests.length || 0,
                         testName: event.data.name,
                         testLine: event.data.line,
@@ -70,57 +80,88 @@ export default async function* rpt5(source) {
                         parentIdx: (event.data.nesting > 0) ? findParent(fileIdx, event.data) : -1,
                         isStarted: false,
                         isComplete: false,
-                        passed: 0,
-                        failed: 0,
-                    }
-                    tests.push(test);
-                    yield `test:enqueue - ${event.data.name}\n`;
+                        testCount: 0,  // arguably, passed + failed
+                        suiteCount: 0,
+                        passCount: 0,
+                        failCount: 0,
+                    });
+                    msg = `test:enqueue - ${event.data.name}\n`;
                 }
+                yield msg;
                 break;
             case 'test:dequeue':
                 if ((event.data.nesting === 0) && (event.data.file === undefined)) {
                     const i = testFiles.findIndex(f => f.file === event.data.name);
                     if (i >= 0) {
                         testFiles[i].isDequeued = true;
-                        yield `${testFiles[i].file} dequeued\n`;
+                        msg = `${testFiles[i].file} dequeued\n`;
                     } else {
-                        yield `${event.data.name} not found\n`;
+                        msg = `${event.data.name} not found\n`;
                     }
                 } else {
-                    yield `test:dequeue ${event.data.name}\n`;
+                    msg = `test:dequeue ${event.data.name}\n`;
                 }
+                yield msg;
                 break;
             case 'test:start':
                 idx = findTestIdxForData(tests, event.data)
                 if (idx === -1) {
-                    yield `no test found for ${JSON.stringify(event.data, null, 3)}`;
-
+                    msg = `no test found for ${JSON.stringify(event.data, null, 3)}`;
                 } else {
                     tests[idx].isStarted = true;
-                    yield `started ${tests[idx].testName}\n`;
+                    msg = `started ${tests[idx].testName}\n`;
                 }
+                yield msg;
                 break;           
             case 'test:pass': 
                 idx = findTestIdxForData(tests, event.data);
                 if (idx === -1) {
-                    yield `no test found for ${JSON.stringify(event.data, null, 3)}`;
-
+                    msg = `no test found for ${JSON.stringify(event.data, null, 3)}`;
                 } else {
+                    msg = `passed ${tests[idx].testName}\n`;
                     tests[idx].isComplete = true;
-                    tests[idx].passed++;
-                    yield `passed ${tests[idx].testName}\n`;
+                    // children will have counts of 0 because nothing below them increments
+                    if (tests[idx].passCount + tests[idx].failCount === 0) {
+                        tests[idx].passCount = 1;                        
+                        testFiles[tests[idx].fileIdx].passCount++;
+                        testFiles[tests[idx].fileIdx].testCount++;
+                    
+                        // increment pass counts up the parent chain
+                        incrementParentChain(idx, 'passCount');
+                        incrementParentChain(idx, 'testCount');
+                    } else {
+                        // suite pass -- don't increment pass counts because children cover that
+                        // Assumes suites don't have assertions outside child tests
+                        testFiles[tests[idx].fileIdx].suiteCount++;
+                        incrementParentChain(idx, 'suiteCount');
+                    }
                 }
+                yield msg;
                 break;
             case 'test:fail': 
                 idx = findTestIdxForData(tests, event.data);
                 if (idx === -1) {
-                    yield `no test found for ${JSON.stringify(event.data, null, 3)}`;
-
+                    msg = `no test found for ${JSON.stringify(event.data, null, 3)}`;
                 } else {
+                    msg = `failed ${tests[idx].testName}\n`;
                     tests[idx].isComplete = true;
-                    tests[idx].failed++;
-                    yield `failed ${tests[idx].testName}\n`;
+                    // children will have counts === 0 because nothing below them increments
+                    if (tests[idx].passCount + tests[idx].failCount === 0) {
+                        tests[idx].failCount = 1;                        
+                        testFiles[tests[idx].fileIdx].failCount++;
+                        testFiles[tests[idx].fileIdx].testCount++;
+                    
+                        // increment fail counts up the parent chain
+                        incrementParentChain(idx, 'failCount');
+                        incrementParentChain(idx, 'testCount');
+                    } else {
+                        // suite fail -- don't increment pass counts because children cover
+                        // Assumes suites don't have assertions outside child tests
+                        testFiles[tests[idx].fileIdx].suiteCount++;
+                        incrementParentChain(idx, 'suiteCount');
+                    }
                 }
+                yield msg;
                 break;          
             default:
                 yield `${event.type} ${event.data.name}\n`;
