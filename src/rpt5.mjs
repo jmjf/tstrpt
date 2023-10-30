@@ -3,15 +3,19 @@ import { fileURLToPath } from 'node:url';
 
 function getTestSummary(testFiles, tests) {
     let summary = '';
-    testFiles.forEach(f => summary += `RAN ${f.file} suites: ${f.suiteCount}; tests: ${f.testCount}; pass: ${f.passCount}; fail: ${f.failCount}\n`);
+    testFiles.forEach(f => {
+        summary += `RAN ${f.file} -- ${f.suiteCount > 0 ? 'suites: ' + f.suiteCount + '; ' : ''}tests: ${f.testCount}; pass: ${f.passCount}; fail: ${f.failCount}\n`;
 
-    // sort tests by fileIdx and testLine
-    tests.sort((a, b) => a.fileIdx === b.fileIdx ? a.testLine - b.testLine : a.fileIdx - b.fileIdx);
-    tests.forEach(t => {
-        return summary += `${'   '.repeat(t.nesting)}${t.testName}\n`; // -> ` + 
-        // `${testFiles[t.fileIdx].filePath} - ${testFiles[t.fileIdx].fileName}\n`;
+        const ts = tests.filter(t => t.fileIdx === f.idx).sort((a, b) => a.fileIdx === b.fileIdx ? a.testLine - b.testLine : a.fileIdx - b.fileIdx)
+        ts.forEach(t => {
+            const isSuite = t.passCount + t.failCount > 1
+            const testStats = ` -- ${t.suiteCount > 0 ? 'suites: ' + t.suiteCount + '; ' : ''}tests: ${t.passCount + t.failCount}; pass: ${t.passCount}; fail: ${t.failCount}`;
+            const prefixText = isSuite ? '>' : t.passCount > 0 ? 'PASS' : 'FAIL';
+            summary += `${'   '.repeat(t.nesting)}${prefixText} ${t.testName}${isSuite ? testStats : ''}\n`;
+        })
     });
-    summary += JSON.stringify(tests, null, 3);
+
+    // summary += JSON.stringify(tests, null, 3);
     return summary;
 }
 
@@ -120,7 +124,7 @@ export default async function* rpt5(source) {
                 } else {
                     msg = `passed ${tests[idx].testName}\n`;
                     tests[idx].isComplete = true;
-                    // children will have counts of 0 because nothing below them increments
+                    // suites will have counts > 0 because children will increment them before the suite pass/fail
                     if (tests[idx].passCount + tests[idx].failCount === 0) {
                         tests[idx].passCount = 1;                        
                         testFiles[tests[idx].fileIdx].passCount++;
@@ -145,7 +149,7 @@ export default async function* rpt5(source) {
                 } else {
                     msg = `failed ${tests[idx].testName}\n`;
                     tests[idx].isComplete = true;
-                    // children will have counts === 0 because nothing below them increments
+                    // suites will have counts > 0 because children will increment them before the suite pass/fail
                     if (tests[idx].passCount + tests[idx].failCount === 0) {
                         tests[idx].failCount = 1;                        
                         testFiles[tests[idx].fileIdx].failCount++;
@@ -162,7 +166,13 @@ export default async function* rpt5(source) {
                     }
                 }
                 yield msg;
-                break;          
+                break;
+            case 'test:diagnostic':
+                yield '';
+                break;
+            case 'test:plan':
+                yield '';
+                break;
             default:
                 yield `${event.type} ${event.data.name}\n`;
                 break;
